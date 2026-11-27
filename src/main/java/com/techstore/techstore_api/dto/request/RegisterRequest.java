@@ -1,9 +1,11 @@
 package com.techstore.techstore_api.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class RegisterRequest {
 
     @NotBlank(message = "Le prénom est obligatoire")
@@ -22,6 +24,7 @@ public class RegisterRequest {
 
     @NotBlank(message = "Le numéro de téléphone est obligatoire")
     private String phone;
+    
     private String profilePictureUrl; 
 
 }
