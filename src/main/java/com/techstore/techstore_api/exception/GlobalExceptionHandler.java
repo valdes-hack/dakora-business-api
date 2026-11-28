@@ -55,6 +55,30 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<String>> handleNoResource(org.springframework.web.servlet.resource.NoResourceFoundException e) {
+        return ResponseEntity.status(404).body(
+            ApiResponse.<String>builder()
+                .status("error")
+                .code(404)
+                .message("Ressource introuvable : " + e.getResourcePath())
+                .timestamp(LocalDateTime.now())
+                .build()
+        );
+    }
+
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<String>> handleMaxUpload(org.springframework.web.multipart.MaxUploadSizeExceededException e) {
+        return ResponseEntity.status(413).body(
+            ApiResponse.<String>builder()
+                .status("error")
+                .code(413)
+                .message("Le fichier dépasse la taille maximale autorisée (20 Mo).")
+                .timestamp(LocalDateTime.now())
+                .build()
+        );
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<String>> handleRuntime(RuntimeException e) {
         log.error("❌ [EXCEPTION RUNTIME]: ", e);
