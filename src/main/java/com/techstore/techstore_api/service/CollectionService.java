@@ -10,6 +10,16 @@ import java.util.List;
 
 public interface CollectionService {
 
+    // ── BATCH ACTIONS ADMIN ────────────────────────────────────────
+    void batchActivate(List<Long> ids);
+    void batchDeactivate(List<Long> ids);
+    void batchPublish(List<Long> ids);
+    void batchUnpublish(List<Long> ids);
+    void batchDelete(List<Long> ids);
+    // CSV export of selected collections
+    byte[] exportCsv(List<Long> ids);
+
+
     // ── LECTURE PUBLIC ─────────────────────────────────────────────
     List<CollectionResponse> getActiveCollections();
     CollectionResponse getCollectionBySlug(String slug);

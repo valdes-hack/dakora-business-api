@@ -18,6 +18,7 @@ public class CollectionResponse {
     private String collectionType;
     private Integer sortOrder;
     private Boolean isActive;
+    private Boolean isPublished;
 
     /** Nombre de produits ACTIFS dans la collection (pour la vitrine et l'admin). */
     private Long productCount;

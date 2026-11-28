@@ -35,6 +35,8 @@ public class CollectionRequest {
 
     private Boolean isActive;
 
+    private Boolean isPublished;
+
     /**
      * Optionnel : liste des IDs produits à lier d'un coup.
      * - À la création : lie ces produits.

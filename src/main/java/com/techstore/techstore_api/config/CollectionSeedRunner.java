@@ -9,13 +9,6 @@ import org.springframework.stereotype.Component;
 
 /**
  * MIGRATION + SEED du système de COLLECTIONS (modèle Shopify-like).
- *
- * Crée :
- *   1. La table `collections`          (les rayons de la boutique)
- *   2. La table `product_collections`  (la table de liaison produits <-> collections)
- *   3. Les 12 collections PEOC par défaut (idempotent : rien n'est écrasé si déjà présent)
- *
- * S'exécute APRES DatabaseMigrationRunner (@Order(1)).
  */
 @Component
 @Order(2)
@@ -38,8 +31,10 @@ public class CollectionSeedRunner implements CommandLineRunner {
                         slug VARCHAR(255) NOT NULL,
                         description TEXT NULL,
                         icon_url VARCHAR(500) NULL,
+                        banner_url VARCHAR(1000) NULL,
                         collection_type VARCHAR(50) NULL DEFAULT 'TYPE',
                         is_active TINYINT(1) NOT NULL DEFAULT 1,
+                        is_published TINYINT(1) NOT NULL DEFAULT 1,
                         sort_order INT NOT NULL DEFAULT 0,
                         created_at DATETIME NULL,
                         updated_at DATETIME NULL,
@@ -51,10 +46,15 @@ public class CollectionSeedRunner implements CommandLineRunner {
             log.warn("ℹ️ [COLLECTIONS] Info table collections : {}", e.getMessage());
         }
 
+        try {
+            jdbcTemplate.execute("ALTER TABLE collections ADD COLUMN banner_url VARCHAR(1000) NULL");
+        } catch (Exception ignored) {}
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE collections ADD COLUMN is_published TINYINT(1) NOT NULL DEFAULT 1");
+        } catch (Exception ignored) {}
+
         // ── 2. TABLE DE LIAISON PRODUIT <-> COLLECTION ───────────────────────
-        // Stratégie défensive (même schéma que le reste du projet) : la table est créée
-        // sans contraintes FK, puis les FK sont ajoutées dans des blocs séparés
-        // non bloquants (l'intégrité reste aussi garantie par CollectionServiceImpl).
         try {
             jdbcTemplate.execute("""
                     CREATE TABLE IF NOT EXISTS product_collections (
@@ -82,7 +82,7 @@ public class CollectionSeedRunner implements CommandLineRunner {
                     """);
             log.info("✅ [COLLECTIONS] FK vers collections ajoutée");
         } catch (Exception e) {
-            log.warn("ℹ️ [COLLECTIONS] FK collections non ajoutée (déjà présente ou type incompatible) : {}", e.getMessage());
+            log.warn("ℹ️ [COLLECTIONS] FK collections non ajoutée : {}", e.getMessage());
         }
         try {
             jdbcTemplate.execute("""
@@ -92,24 +92,20 @@ public class CollectionSeedRunner implements CommandLineRunner {
                     """);
             log.info("✅ [COLLECTIONS] FK vers products ajoutée");
         } catch (Exception e) {
-            log.warn("ℹ️ [COLLECTIONS] FK products non ajoutée (déjà présente ou type incompatible) : {}", e.getMessage());
+            log.warn("ℹ️ [COLLECTIONS] FK products non ajoutée : {}", e.getMessage());
         }
 
         // ── 3. SEED DES 12 COLLECTIONS PEOC ──────────────────────────────────
-        // Format : {type, sortOrder, slug, emoji, nom, description}
         Object[][] seed = {
-                // ── Par TYPE de produit ──
                 {"TYPE", 1, "poussins", "🐣", "Poussins", "Poussins d'un jour et jeunes volailles de qualité pour démarrer votre élevage"},
                 {"TYPE", 2, "couveuses", "🥚", "Couveuses", "Couveuses automatiques et incubateurs pour une éclosion réussie"},
                 {"TYPE", 3, "aliments", "🌾", "Aliments", "Aliments de qualité pour volailles, porcs et petits ruminants"},
                 {"TYPE", 4, "abreuvoirs", "💧", "Abreuvoirs", "Abreuvoirs et équipements d'hydratation pour tous vos animaux"},
                 {"TYPE", 5, "mangeoires", "🍽️", "Mangeoires", "Mangeoires robustes et adaptées à chaque type d'élevage"},
                 {"TYPE", 6, "materiel-veterinaire", "💉", "Matériel vétérinaire", "Vaccins, vitamines et matériel de soins pour la santé de votre cheptel"},
-                // ── Par USAGE ──
                 {"USAGE", 10, "demarrage-aviculture", "🚀", "Démarrage en aviculture", "Tout le nécessaire pour lancer votre élevage de volailles du bon pied"},
                 {"USAGE", 11, "elevage-porcin", "🐖", "Élevage porcin", "Équipements et aliments spécialisés pour l'élevage de porcs"},
                 {"USAGE", 12, "petit-ruminant", "🐐", "Petit ruminant", "Solutions complètes pour chèvres, moutons et autres petits ruminants"},
-                // ── Par PROMOTION ──
                 {"PROMO", 20, "nouveautes", "✨", "Nouveautés", "Les derniers articles arrivés dans la boutique"},
                 {"PROMO", 21, "meilleures-ventes", "🏆", "Meilleures ventes", "Les produits préférés de nos éleveurs"},
                 {"PROMO", 22, "promotions", "🏷️", "Promotions", "Les meilleures offres du moment, à ne pas manquer"}
@@ -126,8 +122,8 @@ public class CollectionSeedRunner implements CommandLineRunner {
                 String description = (String) row[5];
 
                 int inserted = jdbcTemplate.update(
-                        "INSERT IGNORE INTO collections (name, slug, description, icon_url, collection_type, is_active, sort_order, created_at, updated_at) " +
-                                "VALUES (?, ?, ?, ?, ?, 1, ?, NOW(), NOW())",
+                        "INSERT IGNORE INTO collections (name, slug, description, icon_url, collection_type, is_active, is_published, sort_order, created_at, updated_at) " +
+                                "VALUES (?, ?, ?, ?, ?, 1, 1, ?, NOW(), NOW())",
                         name, slug, description, emoji, type, sortOrder);
                 if (inserted > 0) created++;
             } catch (Exception e) {

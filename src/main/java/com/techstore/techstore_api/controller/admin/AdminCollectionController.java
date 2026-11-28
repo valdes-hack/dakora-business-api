@@ -5,10 +5,13 @@ import com.techstore.techstore_api.dto.response.ApiResponse;
 import com.techstore.techstore_api.dto.response.CollectionResponse;
 import com.techstore.techstore_api.dto.response.ProductResponse;
 import com.techstore.techstore_api.service.CollectionService;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -17,17 +20,6 @@ import java.util.List;
 
 /**
  * CONTRÔLEUR ADMIN DES COLLECTIONS.
- *
- *  GET    /api/v1/admin/collections                 -> toutes les collections (y compris inactives)
- *  GET    /api/v1/admin/collections/{id}            -> détail
- *  POST   /api/v1/admin/collections                 -> créer (optionnellement avec productIds)
- *  PUT    /api/v1/admin/collections/{id}            -> modifier (productIds => remplacement complet)
- *  DELETE /api/v1/admin/collections/{id}            -> supprimer (les produits sont conservés)
- *  GET    /api/v1/admin/collections/{id}/products   -> produits liés (y compris inactifs)
- *  POST   /api/v1/admin/collections/{id}/products/{productId}     -> lier un produit
- *  DELETE /api/v1/admin/collections/{id}/products/{productId}     -> délier un produit
- *  PUT    /api/v1/admin/collections/{id}/products   -> remplacer toute la liste (body: [1,2,3])
- *  GET    /api/v1/admin/collections/by-product/{productId}        -> collections contenant ce produit
  */
 @RestController
 @RequestMapping("/api/v1/admin/collections")
@@ -36,6 +28,12 @@ import java.util.List;
 public class AdminCollectionController {
 
     private final CollectionService collectionService;
+
+    @Data
+    public static class BatchRequest {
+        private String action; // activate, deactivate, publish, unpublish, delete
+        private List<Long> ids;
+    }
 
     /**
      * 1. LISTER TOUTES LES COLLECTIONS (ADMIN)
@@ -69,7 +67,6 @@ public class AdminCollectionController {
 
     /**
      * 4. MODIFIER UNE COLLECTION
-     * Astuce : envoyer "productIds": [] pour vider la collection.
      */
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<CollectionResponse>> update(
@@ -81,7 +78,7 @@ public class AdminCollectionController {
     }
 
     /**
-     * 5. SUPPRIMER UNE COLLECTION (les produits ne sont PAS supprimés)
+     * 5. SUPPRIMER UNE COLLECTION
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
@@ -91,7 +88,44 @@ public class AdminCollectionController {
     }
 
     /**
-     * 6. PRODUITS D'UNE COLLECTION (ADMIN, y compris produits désactivés)
+     * 6. ACTIONS GROUPÉES (BATCH)
+     */
+    @PatchMapping("/batch")
+    public ResponseEntity<ApiResponse<Void>> batchAction(@RequestBody BatchRequest req) {
+        if (req == null || req.getIds() == null || req.getIds().isEmpty()) {
+            return ResponseEntity.badRequest().body(ApiResponse.<Void>builder()
+                    .status("error").code(400).message("Aucune collection sélectionnée").build());
+        }
+        String action = req.getAction() != null ? req.getAction().toLowerCase() : "";
+        switch (action) {
+            case "activate" -> collectionService.batchActivate(req.getIds());
+            case "deactivate" -> collectionService.batchDeactivate(req.getIds());
+            case "publish" -> collectionService.batchPublish(req.getIds());
+            case "unpublish" -> collectionService.batchUnpublish(req.getIds());
+            case "delete" -> collectionService.batchDelete(req.getIds());
+            default -> {
+                return ResponseEntity.badRequest().body(ApiResponse.<Void>builder()
+                        .status("error").code(400).message("Action non supportée : " + req.getAction()).build());
+            }
+        }
+        return ResponseEntity.ok(ApiResponse.<Void>builder()
+                .status("success").code(200).message("Action groupée '" + action + "' exécutée avec succès").build());
+    }
+
+    /**
+     * 7. EXPORTER EN CSV
+     */
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportCsv(@RequestParam(required = false) List<Long> ids) {
+        byte[] csv = collectionService.exportCsv(ids);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"collections.csv\"")
+                .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))
+                .body(csv);
+    }
+
+    /**
+     * 8. PRODUITS D'UNE COLLECTION (ADMIN)
      */
     @GetMapping("/{id}/products")
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> getProducts(
@@ -105,7 +139,7 @@ public class AdminCollectionController {
     }
 
     /**
-     * 7. LIER UN PRODUIT À LA COLLECTION
+     * 9. LIER UN PRODUIT À LA COLLECTION
      */
     @PostMapping("/{id}/products/{productId}")
     public ResponseEntity<ApiResponse<CollectionResponse>> addProduct(
@@ -117,7 +151,7 @@ public class AdminCollectionController {
     }
 
     /**
-     * 8. DÉLIER UN PRODUIT DE LA COLLECTION
+     * 10. DÉLIER UN PRODUIT DE LA COLLECTION
      */
     @DeleteMapping("/{id}/products/{productId}")
     public ResponseEntity<ApiResponse<Void>> removeProduct(
@@ -129,7 +163,7 @@ public class AdminCollectionController {
     }
 
     /**
-     * 9. REMPLACER TOUTE LA LISTE DES PRODUITS (body : [1, 5, 12])
+     * 11. REMPLACER TOUTE LA LISTE DES PRODUITS
      */
     @PutMapping("/{id}/products")
     public ResponseEntity<ApiResponse<CollectionResponse>> setProducts(
@@ -141,7 +175,7 @@ public class AdminCollectionController {
     }
 
     /**
-     * 10. COLLECTIONS CONTENANT UN PRODUIT DONNÉ (pour la page d'édition produit)
+     * 12. COLLECTIONS CONTENANT UN PRODUIT DONNÉ
      */
     @GetMapping("/by-product/{productId}")
     public ResponseEntity<ApiResponse<List<CollectionResponse>>> getByProduct(@PathVariable Long productId) {

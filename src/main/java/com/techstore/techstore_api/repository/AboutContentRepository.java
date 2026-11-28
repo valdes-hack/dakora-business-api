@@ -1,0 +1,13 @@
+package com.techstore.techstore_api.repository;
+
+import com.techstore.techstore_api.model.AboutContent;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface AboutContentRepository extends JpaRepository<AboutContent, Long> {
+
+    Optional<AboutContent> findByVersion(String version);
+}

@@ -58,6 +58,10 @@ public class Collection {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column(name = "is_published", nullable = false)
+    @Builder.Default
+    private Boolean isPublished = true;
+
     @Column(name = "sort_order", nullable = false)
     @Builder.Default
     private Integer sortOrder = 0;
@@ -89,5 +93,9 @@ public class Collection {
 
     public boolean isActive() {
         return isActive != null && isActive;
+    }
+
+    public boolean isPublished() {
+        return isPublished != null && isPublished;
     }
 }

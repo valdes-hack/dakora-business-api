@@ -18,6 +18,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintWriter;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -35,6 +37,85 @@ public class CollectionServiceImpl implements CollectionService {
     private final ProductRepository productRepository;
     private final ProductService productService;
 
+    // ------------------------------------------------
+    // BATCH ACTIONS (ADMIN)
+    // ------------------------------------------------
+    @Override
+    @Transactional
+    public void batchActivate(List<Long> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            collectionRepository.updateIsActiveByIds(true, ids);
+            log.info("✅ [COLLECTIONS] Batch activation pour {} collections", ids.size());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void batchDeactivate(List<Long> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            collectionRepository.updateIsActiveByIds(false, ids);
+            log.info("✅ [COLLECTIONS] Batch désactivation pour {} collections", ids.size());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void batchPublish(List<Long> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            collectionRepository.updateIsPublishedByIds(true, ids);
+            log.info("✅ [COLLECTIONS] Batch publication pour {} collections", ids.size());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void batchUnpublish(List<Long> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            collectionRepository.updateIsPublishedByIds(false, ids);
+            log.info("✅ [COLLECTIONS] Batch dépublication pour {} collections", ids.size());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void batchDelete(List<Long> ids) {
+        if (ids != null && !ids.isEmpty()) {
+            collectionRepository.deleteAllByIdInBatch(ids);
+            log.info("🗑️ [COLLECTIONS] Batch suppression pour {} collections", ids.size());
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] exportCsv(List<Long> ids) {
+        List<Collection> cols = (ids != null && !ids.isEmpty())
+                ? collectionRepository.findAllById(ids)
+                : collectionRepository.findAllByOrderBySortOrderAscIdAsc();
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        PrintWriter writer = new PrintWriter(out);
+        writer.println("id,name,slug,description,isActive,isPublished,sortOrder,createdAt,updatedAt");
+        for (Collection c : cols) {
+            writer.printf("%d,\"%s\",\"%s\",\"%s\",%b,%b,%d,%s,%s%n",
+                    c.getId(),
+                    escapeCsv(c.getName()),
+                    escapeCsv(c.getSlug()),
+                    escapeCsv(c.getDescription()),
+                    c.getIsActive(),
+                    c.getIsPublished(),
+                    c.getSortOrder(),
+                    c.getCreatedAt(),
+                    c.getUpdatedAt());
+        }
+        writer.flush();
+        return out.toByteArray();
+    }
+
+    private String escapeCsv(String value) {
+        if (value == null) return "";
+        return value.replace("\"", "\"\"");
+    }
+
     // ==========================================
     // 🔍 LECTURE PUBLIC
     // ==========================================
@@ -42,7 +123,7 @@ public class CollectionServiceImpl implements CollectionService {
     @Override
     @Transactional(readOnly = true)
     public List<CollectionResponse> getActiveCollections() {
-        return collectionRepository.findByIsActiveTrueOrderBySortOrderAscIdAsc().stream()
+        return collectionRepository.findByIsActiveTrueAndIsPublishedTrueOrderBySortOrderAscIdAsc().stream()
                 .map(this::mapToResponse)
                 .toList();
     }
@@ -119,6 +200,7 @@ public class CollectionServiceImpl implements CollectionService {
                 .bannerUrl(request.getBannerUrl())
                 .collectionType(request.getCollectionType() != null ? request.getCollectionType() : "TYPE")
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
+                .isPublished(request.getIsPublished() != null ? request.getIsPublished() : true)
                 .sortOrder(request.getSortOrder() != null ? request.getSortOrder() : 0)
                 .build();
 
@@ -142,8 +224,6 @@ public class CollectionServiceImpl implements CollectionService {
         if (request.getName() != null && !request.getName().isBlank()) {
             collection.setName(request.getName().trim());
         }
-        // Le slug ne change QUE s'il est explicitement fourni (stabilité des URLs / SEO).
-        // Renommer une collection ne casse donc pas ses liens existants.
         if (request.getSlug() != null && !request.getSlug().isBlank()) {
             String newSlug = slugify(request.getSlug());
             if (!newSlug.isBlank() && !newSlug.equals(collection.getSlug())) {
@@ -161,11 +241,11 @@ public class CollectionServiceImpl implements CollectionService {
             collection.setCollectionType(request.getCollectionType());
         }
         if (request.getIsActive() != null) collection.setIsActive(request.getIsActive());
+        if (request.getIsPublished() != null) collection.setIsPublished(request.getIsPublished());
         if (request.getSortOrder() != null) collection.setSortOrder(request.getSortOrder());
 
         Collection saved = collectionRepository.save(collection);
 
-        // Si productIds est fourni (même vide), on REMPLACE toute la liste
         if (request.getProductIds() != null) {
             replaceProducts(saved, request.getProductIds());
         }
@@ -179,8 +259,6 @@ public class CollectionServiceImpl implements CollectionService {
     public void deleteCollection(Long id) {
         Collection collection = collectionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Collection non trouvée avec l'id : " + id));
-        // orphanRemoval = true + FK ON DELETE CASCADE : les liaisons disparaissent,
-        // les PRODUITS ne sont jamais supprimés.
         collectionRepository.delete(collection);
         log.info("🗑️ [COLLECTION] Collection '{}' supprimée (produits conservés)", collection.getName());
     }
@@ -194,10 +272,9 @@ public class CollectionServiceImpl implements CollectionService {
                 .orElseThrow(() -> new RuntimeException("Produit non trouvé avec l'id : " + productId));
 
         if (productCollectionRepository.existsByCollectionIdAndProductId(collectionId, productId)) {
-            return mapToResponse(collection); // Déjà lié : idempotent, pas d'erreur
+            return mapToResponse(collection);
         }
 
-        // La nouvelle liaison prend la position max + 1
         int nextPosition = (int) productCollectionRepository.countByCollectionId(collectionId);
         productCollectionRepository.save(ProductCollection.builder()
                 .collection(collection)
@@ -227,11 +304,9 @@ public class CollectionServiceImpl implements CollectionService {
     // 🔧 OUTILS PRIVÉS
     // ==========================================
 
-    /** Remplace TOUTE la liste des produits d'une collection (diff intelligent). */
     private void replaceProducts(Collection collection, List<Long> productIds) {
         List<ProductCollection> current = productCollectionRepository.findByCollectionIdOrderBySortOrderAscIdAsc(collection.getId());
 
-        // 1. Supprimer les liaisons qui ne sont plus voulues
         Set<Long> wanted = new HashSet<>(productIds);
         List<Long> toRemove = current.stream()
                 .map(pc -> pc.getProduct().getId())
@@ -241,7 +316,6 @@ public class CollectionServiceImpl implements CollectionService {
             productCollectionRepository.deleteByCollectionIdAndProductId(collection.getId(), pid);
         }
 
-        // 2. Ajouter les nouvelles liaisons (en conservant la position des existantes)
         int position = 0;
         for (Long productId : productIds) {
             ProductCollection existing = productCollectionRepository
@@ -263,7 +337,6 @@ public class CollectionServiceImpl implements CollectionService {
         }
     }
 
-    /** Lie une liste de produits (ignore les déjà liés, vérifie l'existence). */
     private void linkProducts(Collection collection, List<Long> productIds) {
         int position = (int) productCollectionRepository.countByCollectionId(collection.getId());
         for (Long productId : productIds) {
@@ -287,7 +360,6 @@ public class CollectionServiceImpl implements CollectionService {
         return name.trim();
     }
 
-    /** Slug unique : depuis le slug fourni, sinon dérivé du nom ; suffixe -2, -3... si collision. */
     private String resolveUniqueSlug(String requestedSlug, String name, Long excludeId) {
         String base = (requestedSlug != null && !requestedSlug.isBlank())
                 ? slugify(requestedSlug)
@@ -307,7 +379,6 @@ public class CollectionServiceImpl implements CollectionService {
         return candidate;
     }
 
-    /** Slugify robuste : minuscules, sans accents, tirets. "Élevage porcin" -> "elevage-porcin" */
     private String slugify(String input) {
         if (input == null) return "";
         String normalized = Normalizer.normalize(input.toLowerCase(Locale.FRENCH), Normalizer.Form.NFD)
@@ -330,6 +401,7 @@ public class CollectionServiceImpl implements CollectionService {
                 .collectionType(collection.getCollectionType())
                 .sortOrder(collection.getSortOrder())
                 .isActive(collection.isActive())
+                .isPublished(collection.isPublished())
                 .productCount(productCount)
                 .createdAt(collection.getCreatedAt())
                 .build();
