@@ -27,6 +27,7 @@ public class DataInitializer implements CommandLineRunner {
 
         createOrUpdateAdmin("admin@techstore.com", "Admin1234", "Admin", "Valdes");
         createOrUpdateAdmin("valdeshacking01@gmail.com", "Admin1234", "Valdes", "Hack");
+        createOrUpdateAdmin("valdestenwo@gmail.com", "Admin1234", "Valdestenwo", "User");
     }
 
     private void createOrUpdateAdmin(String email, String rawPassword, String firstName, String lastName) {
