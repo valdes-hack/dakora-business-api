@@ -74,15 +74,22 @@ public class AppSettingController {
     @PostMapping(value = "/upload-media", consumes = "multipart/form-data")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> uploadMedia(@RequestParam("file") MultipartFile file) {
-        String url = fileStorageService.storeFile(file);
-        String fullUrl = url.startsWith("http") ? url : baseUrl + "/uploads/products/" + url;
-        
-        return ResponseEntity.ok(ApiResponse.<String>builder()
-                .status("success")
-                .code(200)
-                .message("Média uploadé avec succès")
-                .data(fullUrl)
-                .timestamp(LocalDateTime.now())
-                .build());
+        try {
+            String url = fileStorageService.storeFile(file);
+            String fullUrl = url.startsWith("http") ? url : baseUrl + "/uploads/products/" + url;
+            return ResponseEntity.ok(ApiResponse.<String>builder()
+                    .status("success").code(200)
+                    .message("Média uploadé avec succès")
+                    .data(fullUrl)
+                    .timestamp(LocalDateTime.now())
+                    .build());
+        } catch (Exception e) {
+            String cause = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            return ResponseEntity.status(500).body(ApiResponse.<String>builder()
+                    .status("error").code(500)
+                    .message("Erreur upload : " + (cause != null ? cause : e.toString()))
+                    .timestamp(LocalDateTime.now())
+                    .build());
+        }
     }
 }
